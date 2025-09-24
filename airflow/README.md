@@ -27,7 +27,7 @@ Demo project yang menunjukkan perbedaan core antara ETL dan ELT pipelines menggu
 
 ### 1. Setup Environment
 ```bash
-cd /Users/ekosakti/Code/PID/airflow/airflow-iot-demo
+cd airflow
 
 # Pastikan script postgres executable
 chmod +x init_postgres.sh
