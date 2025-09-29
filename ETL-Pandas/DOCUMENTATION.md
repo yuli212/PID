@@ -70,8 +70,6 @@ cd ETL-Pandas
 # Install dependencies
 pip install -r requirements.txt
 
-# Run quick start (otomatis setup semua)
-python quick_start.py
 ```
 
 ### 2. Manual Setup
