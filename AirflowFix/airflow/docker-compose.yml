@@ -1,0 +1,95 @@
+# Menggunakan YAML Anchors untuk mendefinisikan konfigurasi umum
+x-airflow-common:
+  &airflow-common
+  image: apache/airflow:2.8.1
+  environment:
+    &airflow-env
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow_db
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow_db
+    AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
+    # <<< DITAMBAHKAN: Kunci untuk enkripsi, penting untuk keamanan
+    AIRFLOW__CORE__FERNET_KEY: '${AIRFLOW__CORE__FERNET_KEY:-_225I_s8_OFQ3j_8bAcb_tRG3MEa-O3hpy3Zc2d_ajg=}'
+    # <<< DITAMBAHKAN: Kunci rahasia untuk mengatasi error 403 FORBIDDEN
+    AIRFLOW__WEBSERVER__SECRET_KEY: '${AIRFLOW__WEBSERVER__SECRET_KEY:-your-super-secret-and-long-key-goes-here}'
+    # <<< DITAMBAHKAN: Base URL untuk mengatasi error "Request URL is missing..."
+    AIRFLOW__WEBSERVER__BASE_URL: http://localhost:8080
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW_UID: ${AIRFLOW_UID}
+    _PIP_ADDITIONAL_REQUIREMENTS: apache-airflow-providers-postgres==5.10.0 pandas sqlalchemy psycopg2-binary
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./data:/opt/airflow/data
+  depends_on:
+    - postgres
+    - redis
+  # <<< DITAMBAHKAN: Menghubungkan service ke jaringan yang sama
+  networks:
+    - airflow-network
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init_postgres.sh:/docker-entrypoint-initdb.d/init_postgres.sh
+    ports:
+      - "5432:5432"
+    # <<< DITAMBAHKAN: Menghubungkan service ke jaringan yang sama
+    networks:
+      - airflow-network
+
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+    # <<< DITAMBAHKAN: Menghubungkan service ke jaringan yang sama
+    networks:
+      - airflow-network
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        pip install --no-cache-dir apache-airflow-providers-postgres==5.10.0 pandas sqlalchemy psycopg2-binary
+        airflow db migrate
+        airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com
+        airflow connections delete postgres_default || true
+        airflow connections add postgres_default --conn-type postgres --conn-host postgres --conn-login airflow --conn-password airflow --conn-port 5432 --conn-schema dwh
+    environment:
+      <<: *airflow-env
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 10s
+      retries: 5
+      start_period: 30s
+      timeout: 10s
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+
+  airflow-worker:
+    <<: *airflow-common
+    command: celery worker
+
+# <<< DITAMBAHKAN: Mendefinisikan jaringan agar semua service bisa saling berkomunikasi
+networks:
+  airflow-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
